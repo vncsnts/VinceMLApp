@@ -1,0 +1,15 @@
+{
+  "originHash" : "d00d2d453cc3f3f6649236585ea73cad363161fcbecb5cbf9cf68adefee79a0e",
+  "pins" : [
+    {
+      "identity" : "vinceml",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/vncsnts/VinceML",
+      "state" : {
+        "revision" : "983df0817c40c0b22721e6796d0baa02c3e0a6da",
+        "version" : "1.0.1"
+      }
+    }
+  ],
+  "version" : 3
+}
