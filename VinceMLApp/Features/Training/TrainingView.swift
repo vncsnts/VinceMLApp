@@ -152,25 +152,16 @@ struct TrainingView: View {
                     onCancel: viewModel.cancelLabelInput
                 )
             }
-            .alert("Error", isPresented: $viewModel.showingError) {
-                Button("OK", action: viewModel.dismissError)
-            } message: {
-                Text(viewModel.errorMessage ?? "Unknown error")
-            }
-            .alert("Success", isPresented: $viewModel.showingSuccess) {
-                Button("OK", action: viewModel.dismissSuccess)
-            } message: {
-                Text(viewModel.successMessage)
-            }
             .onAppear {
                 viewModel.refreshData()
             }
-            .loadingView(
-                isLoading: viewModel.isTraining,
-                message: "Training model...",
-                showProgress: true,
-                progress: viewModel.trainingProgress
-            )
+            .loadingState(viewModel.loadingState, 
+                         onRetry: { 
+                             Task { viewModel.trainModel() }
+                         },
+                         onDismiss: { 
+                             viewModel.clearLoadingState() 
+                         })
         }
     }
 }

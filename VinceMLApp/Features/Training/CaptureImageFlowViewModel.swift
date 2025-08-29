@@ -37,9 +37,9 @@ final class CaptureImageFlowViewModel {
     var isCapturing: Bool = false
     var sessionStats = CaptureSessionStats()
     var selectedLabel: String
-    var errorMessage: String?
-    var showingError: Bool = false
-    var isProcessingSave: Bool = false
+    
+    // MARK: - Loading State
+    var loadingState = LoadingState.idle
     
     // MARK: - Dependencies
     private let trainingViewModel: TrainingViewModel
@@ -54,7 +54,7 @@ final class CaptureImageFlowViewModel {
     }
     
     var canSaveAll: Bool {
-        !capturedImages.isEmpty && !isProcessingSave
+        !capturedImages.isEmpty && !loadingState.isSilentLoading
     }
     
     // MARK: - Initialization
@@ -64,22 +64,6 @@ final class CaptureImageFlowViewModel {
     }
     
     // MARK: - Public Methods
-    
-    /// Initiates the image capture process
-    func captureImage() {
-        guard canCapture else { return }
-        
-        isCapturing = true
-        
-        // Reset capturing state after a short delay to provide visual feedback
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-            await MainActor.run {
-                isCapturing = false
-            }
-        }
-    }
-    
     /// Handles when an image is successfully captured from the camera
     /// - Parameter image: The captured UIImage
     func handleImageCaptured(_ image: UIImage) {
@@ -135,7 +119,7 @@ final class CaptureImageFlowViewModel {
         let labelToUse = await MainActor.run { selectedLabel }
         
         await MainActor.run {
-            isProcessingSave = true
+            loadingState = .silentLoading
         }
         
         do {
@@ -147,24 +131,22 @@ final class CaptureImageFlowViewModel {
             await MainActor.run {
                 sessionStats.savedCount += imagesToSave.count
                 capturedImages.removeAll()
-                isProcessingSave = false
-                
-                // Provide success feedback
-                let notificationFeedback = UINotificationFeedbackGenerator()
-                notificationFeedback.notificationOccurred(.success)
+                loadingState = .idle
             }
             
         } catch {
             await MainActor.run {
-                isProcessingSave = false
-                showError("Failed to save images: \(error.localizedDescription)")
+                loadingState = .failure("Failed to save images: \(error.localizedDescription)")
             }
         }
     }
     
+    func clearLoadingState() {
+        loadingState = .idle
+    }
+    
     private func showError(_ message: String) {
-        errorMessage = message
-        showingError = true
+        loadingState = .failure(message)
     }
 }
 

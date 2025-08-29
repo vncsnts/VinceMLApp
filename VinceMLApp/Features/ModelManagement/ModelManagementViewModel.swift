@@ -42,14 +42,11 @@ class ModelManagementViewModel {
     // MARK: - Published Properties
     var availableModels: [String] = []
     var selectedModel: String?
-    var isLoading: Bool = false
-    var isCreatingModel: Bool = false
-    var errorMessage: String?
-    var showingError: Bool = false
-    var showingSuccess: Bool = false
-    var successMessage: String = ""
     var showingCreateModel: Bool = false
     var newModelName: String = ""
+    
+    // MARK: - Loading State
+    var loadingState = LoadingState.idle
     
     // MARK: - Dependencies
     private let modelManager: ModelManagerProtocol
@@ -69,7 +66,13 @@ class ModelManagementViewModel {
         Task {
             await modelManager.setSelectedModel(name: name)
         }
-        showSuccess("Model '\(name)' selected for training")
+        loadingState = .success("Model '\(name)' selected for training")
+        
+        // Auto-dismiss success after 2 seconds
+        Task {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            loadingState = .idle
+        }
     }
     
     func createModel(name: String) {
@@ -90,21 +93,29 @@ class ModelManagementViewModel {
         }
     }
     
+    func clearLoadingState() {
+        loadingState = .idle
+    }
+    
     // MARK: - Private Methods
     private func showError(_ message: String) {
-        errorMessage = message
-        showingError = true
+        loadingState = .failure(message)
     }
     
     private func showSuccess(_ message: String) {
-        successMessage = message
-        showingSuccess = true
+        loadingState = .success(message)
+        
+        // Auto-dismiss success after 2 seconds
+        Task {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            loadingState = .idle
+        }
     }
     
     // MARK: - Background Operations
     nonisolated private func loadData() async {
         await MainActor.run {
-            isLoading = true
+            loadingState = .loading()
         }
         
         let models = await modelManager.getAvailableModels()
@@ -122,13 +133,13 @@ class ModelManagementViewModel {
                     }
                 }
             }
-            isLoading = false
+            loadingState = .idle
         }
     }
     
     nonisolated private func createModelInBackground(name: String) async {
         await MainActor.run {
-            isCreatingModel = true
+            loadingState = .loading()
         }
         
         do {
@@ -137,20 +148,28 @@ class ModelManagementViewModel {
             
             await MainActor.run {
                 selectedModel = name
-                isCreatingModel = false
-                showSuccess("Model '\(name)' created successfully!")
+                loadingState = .success("Model '\(name)' created successfully!")
+                
+                // Auto-dismiss success after 2 seconds
+                Task {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    loadingState = .idle
+                }
             }
             
             await loadData()
         } catch {
             await MainActor.run {
-                isCreatingModel = false
-                showError("Failed to create model: \(error.localizedDescription)")
+                loadingState = .failure("Failed to create model: \(error.localizedDescription)")
             }
         }
     }
     
     nonisolated private func deleteModelInBackground(name: String) async {
+        await MainActor.run {
+            loadingState = .loading()
+        }
+        
         do {
             try await modelManager.deleteModel(name: name)
             
@@ -158,13 +177,19 @@ class ModelManagementViewModel {
                 if selectedModel == name {
                     selectedModel = nil
                 }
-                showSuccess("Model '\(name)' deleted successfully!")
+                loadingState = .success("Model '\(name)' deleted successfully!")
+                
+                // Auto-dismiss success after 2 seconds
+                Task {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    loadingState = .idle
+                }
             }
             
             await loadData()
         } catch {
             await MainActor.run {
-                showError("Failed to delete model: \(error.localizedDescription)")
+                loadingState = .failure("Failed to delete model: \(error.localizedDescription)")
             }
         }
     }

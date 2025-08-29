@@ -122,11 +122,13 @@ struct ClassificationView: View {
             .onDisappear {
                 viewModel.stopLiveClassification()
             }
-            .alert("Error", isPresented: $viewModel.showingError) {
-                Button("OK") { }
-            } message: {
-                Text(viewModel.errorMessage ?? "Unknown error")
-            }
+            .loadingState(viewModel.loadingState, 
+                         onRetry: { 
+                             viewModel.loadModel() 
+                         },
+                         onDismiss: { 
+                             viewModel.clearLoadingState() 
+                         })
         }
     }
 }

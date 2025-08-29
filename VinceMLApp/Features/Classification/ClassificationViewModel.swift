@@ -35,11 +35,8 @@ class ClassificationViewModel {
     /// Whether live classification from camera feed is enabled
     var isLiveClassificationEnabled: Bool = false
     
-    /// Error message to display to the user
-    var errorMessage: String?
-    
-    /// Whether an error alert should be shown
-    var showingError: Bool = false
+    /// Loading state for operations
+    var loadingState = LoadingState.idle
     
     /// Whether the app has camera permission
     var hasCameraPermission: Bool = false
@@ -90,7 +87,7 @@ class ClassificationViewModel {
     /// - Parameter image: The image to classify
     func classifyImage(_ image: UIImage) {
         guard let model = currentModel else {
-            showError("No model available. Please train a model first using the training tab.")
+            loadingState = .failure("No model available. Please train a model first using the training tab.")
             return
         }
         
@@ -160,13 +157,16 @@ class ClassificationViewModel {
         classificationResult = ""
     }
     
+    func clearLoadingState() {
+        loadingState = .idle
+    }
+    
     // MARK: - Private Methods
     
     /// Displays an error message to the user
     /// - Parameter message: The error message to display
     private func showError(_ message: String) {
-        errorMessage = message
-        showingError = true
+        loadingState = .failure(message)
     }
     
     // MARK: - Background Operations
@@ -243,7 +243,7 @@ class ClassificationViewModel {
         await MainActor.run {
             hasCameraPermission = granted
             if !granted {
-                showError("Camera permission is required for classification")
+                loadingState = .failure("Camera permission is required for classification")
             }
         }
     }

@@ -58,11 +58,13 @@ struct CaptureImageFlowView: View {
             }
             .navigationTitle("Batch Capture")
             .navigationBarTitleDisplayMode(.inline)
-            .alert("Error", isPresented: $viewModel.showingError) {
-                Button("OK") { }
-            } message: {
-                Text(viewModel.errorMessage ?? "Unknown error")
-            }
+            .loadingState(viewModel.loadingState, 
+                         onRetry: { 
+                             viewModel.saveAllCapturedImages() 
+                         },
+                         onDismiss: { 
+                             viewModel.clearLoadingState() 
+                         })
         }
     }
     
@@ -142,8 +144,6 @@ struct CaptureImageFlowView: View {
         VStack(spacing: 16) {
             // Primary capture button
             Button(action: {
-                viewModel.captureImage()
-                // Trigger capture on the camera view after updating viewModel state
                 if let cameraView = cameraView {
                     cameraView.capturePhoto()
                 }
@@ -194,7 +194,7 @@ struct CaptureImageFlowView: View {
                     viewModel.saveAllCapturedImages()
                 }) {
                     VStack(spacing: 4) {
-                        if viewModel.isProcessingSave {
+                        if viewModel.loadingState.isSilentLoading {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle())
                                 .scaleEffect(0.8)

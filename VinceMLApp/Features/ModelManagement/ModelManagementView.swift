@@ -16,25 +16,10 @@ struct ModelManagementView: View {
         self._viewModel = State(wrappedValue: viewModel)
     }
     
-    // Computed properties for loading states
-    private var isAnyLoading: Bool {
-        viewModel.isLoading || viewModel.isCreatingModel
-    }
-    
-    private var loadingMessage: String {
-        if viewModel.isCreatingModel {
-            return "Creating model..."
-        } else if viewModel.isLoading {
-            return "Loading models..."
-        } else {
-            return "Loading..."
-        }
-    }
-    
     var body: some View {
         NavigationView {
             VStack {
-                if viewModel.availableModels.isEmpty && !isAnyLoading {
+                if viewModel.availableModels.isEmpty && !viewModel.loadingState.isLoading {
                     // Empty state
                     VStack(spacing: 20) {
                         Image(systemName: "cube.box")
@@ -118,20 +103,13 @@ struct ModelManagementView: View {
             } message: {
                 Text("Are you sure you want to delete '\(modelToDelete)'? This action cannot be undone.")
             }
-            .alert("Success", isPresented: $viewModel.showingSuccess) {
-                Button("OK") { }
-            } message: {
-                Text(viewModel.successMessage)
-            }
-            .alert("Error", isPresented: $viewModel.showingError) {
-                Button("OK") { }
-            } message: {
-                Text(viewModel.errorMessage ?? "Unknown error")
-            }
-            .loadingView(
-                isLoading: isAnyLoading,
-                message: loadingMessage
-            )
+            .loadingState(viewModel.loadingState, 
+                         onRetry: { 
+                             viewModel.refreshData() 
+                         },
+                         onDismiss: { 
+                             viewModel.clearLoadingState() 
+                         })
         }
     }
 }

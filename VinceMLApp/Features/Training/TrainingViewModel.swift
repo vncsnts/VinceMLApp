@@ -45,25 +45,22 @@ final class TrainingViewModel {
     var availableLabels: Set<String> = []
     var selectedLabel: String = ""
     var selectedModelName: String?
-    var isTraining: Bool = false
-    var trainingProgress: Double = 0.0
-    var errorMessage: String?
-    var showingError: Bool = false
-    var showingSuccess: Bool = false
-    var successMessage: String = ""
     var showingCamera = false
     var capturedImage: UIImage?
     var showingLabelInput = false
     var newLabel = ""
     var showingBatchCapture = false
     
+    // MARK: - Loading State
+    var loadingState = LoadingState.idle
+    
     // Computed properties for reactive button states
     internal var captureButtonEnabled: Bool {
-        !selectedLabel.isEmpty && !isTraining
+        !selectedLabel.isEmpty && !loadingState.isLoading
     }
     
     internal var trainButtonEnabled: Bool {
-        availableLabels.count >= 2 && !isTraining
+        availableLabels.count >= 2 && !loadingState.isLoading
     }
     
     internal var statisticsCardViewModel: StatisticCardViewModel = {
@@ -104,8 +101,7 @@ final class TrainingViewModel {
         
         guard let modelName = modelName else {
             await MainActor.run {
-                errorMessage = "No model selected"
-                showingError = true
+                loadingState = .failure("No model selected")
             }
             throw TrainingDataError.imageNotFound
         }
@@ -141,12 +137,12 @@ final class TrainingViewModel {
     
     func trainModel() {
         guard availableLabels.count >= 2 else {
-            showError("Need at least 2 different labels to train a model")
+            loadingState = .failure("Need at least 2 different labels to train a model")
             return
         }
         
         guard trainingImages.count >= 10 else {
-            showError("Need at least 10 training images total")
+            loadingState = .failure("Need at least 10 training images total")
             return
         }
         
@@ -190,16 +186,16 @@ final class TrainingViewModel {
         
         // Save the new label to persistent storage
         Task {
+            loadingState = .loading()
+            
             do {
                 if let modelName = selectedModelName {
                     try await trainingDataService.addLabel(label, for: modelName)
                     refreshData() // Refresh to update the label collection
+                    loadingState = .idle
                 }
             } catch {
-                await MainActor.run {
-                    errorMessage = "Failed to add label: \(error.localizedDescription)"
-                    showingError = true
-                }
+                loadingState = .failure("Failed to add label: \(error.localizedDescription)")
             }
         }
     }
@@ -213,25 +209,23 @@ final class TrainingViewModel {
         showingBatchCapture = false
     }
     
-    func dismissError() {
-        showingError = false
-        errorMessage = nil
-    }
-    
-    func dismissSuccess() {
-        showingSuccess = false
-        successMessage = ""
+    func clearLoadingState() {
+        loadingState = .idle
     }
     
     // MARK: - Private Methods
     private func showError(_ message: String) {
-        errorMessage = message
-        showingError = true
+        loadingState = .failure(message)
     }
     
     private func showSuccess(_ message: String) {
-        successMessage = message
-        showingSuccess = true
+        loadingState = .success(message)
+        
+        // Auto-dismiss success after 2 seconds
+        Task {
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            loadingState = .idle
+        }
     }
     
     // MARK: - Background Operations
@@ -249,8 +243,7 @@ final class TrainingViewModel {
             try await saveTrainingImageAsync(image, label: label)
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to save training image: \(error.localizedDescription)"
-                showingError = true
+                loadingState = .failure("Failed to save training image: \(error.localizedDescription)")
             }
         }
     }
@@ -289,7 +282,7 @@ final class TrainingViewModel {
             await loadTrainingData()
         } catch {
             await MainActor.run {
-                showError("Failed to delete image: \(error.localizedDescription)")
+                loadingState = .failure("Failed to delete image: \(error.localizedDescription)")
             }
         }
     }
@@ -305,37 +298,26 @@ final class TrainingViewModel {
             await loadTrainingData()
         } catch {
             await MainActor.run {
-                showError("Failed to delete images: \(error.localizedDescription)")
+                loadingState = .failure("Failed to delete images: \(error.localizedDescription)")
             }
         }
     }
     
     nonisolated private func trainModelInBackground() async {
+        // Get the currently selected model name
+        guard let selectedModelName = await modelManager.getSelectedModelName() else {
+            await MainActor.run {
+                loadingState = .failure("No model selected. Please select a model from the Models tab.")
+            }
+            return
+        }
+
         await MainActor.run {
-            isTraining = true
-            trainingProgress = 0.0
+            loadingState = .loading("Training '\(selectedModelName)'")
         }
         
         do {
-            // Get the currently selected model name
-            guard let selectedModelName = await modelManager.getSelectedModelName() else {
-                await MainActor.run {
-                    isTraining = false
-                    trainingProgress = 0.0
-                    showError("No model selected. Please select a model from the Models tab.")
-                }
-                return
-            }
-            
             let trainingDataURL = await trainingDataService.getTrainingImagesURL(for: selectedModelName)
-            
-            await MainActor.run {
-                trainingProgress = 0.2
-            }
-            
-            await MainActor.run {
-                trainingProgress = 0.3
-            }
             
             // Get the model training URL where we want to save the .mlmodel file
             let modelTrainingURL = await modelManager.getModelTrainingURL(name: selectedModelName)
@@ -343,24 +325,22 @@ final class TrainingViewModel {
             // Train and save the model directly to the model directory
             let _ = try await mlModelService.trainAndSaveModel(from: trainingDataURL, to: modelTrainingURL)
             
-            await MainActor.run {
-                trainingProgress = 0.8
-            }
-            
             // Now compile and save the trained model as .mlmodelc
             try await modelManager.saveTrainedModel(from: modelTrainingURL, name: selectedModelName)
             
             await MainActor.run {
-                trainingProgress = 1.0
-                isTraining = false
-                showSuccess("Model '\(selectedModelName)' trained successfully!")
+                loadingState = .success("Model '\(selectedModelName)' trained successfully!")
+                
+                // Auto-dismiss success after 3 seconds
+                Task {
+                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                    loadingState = .idle
+                }
             }
             
         } catch {
             await MainActor.run {
-                isTraining = false
-                trainingProgress = 0.0
-                showError("Training failed: \(error.localizedDescription)")
+                loadingState = .failure("Training failed: \(error.localizedDescription)")
             }
         }
     }
@@ -393,7 +373,7 @@ final class TrainingViewModel {
             }
         } catch {
             await MainActor.run {
-                showError("Failed to load training data: \(error.localizedDescription)")
+                loadingState = .failure("Failed to load training data: \(error.localizedDescription)")
             }
         }
     }
